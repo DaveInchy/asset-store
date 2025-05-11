@@ -1,0 +1,83 @@
+#version 430
+
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+struct Vertex {
+    vec4 position;
+    vec4 oldPosition;
+    vec4 normal;
+    vec2 uv;
+    float invMass;
+};
+
+struct Constraint {
+    uint vertexA;
+    uint vertexB;
+    float restLength;
+};
+
+layout(std430, binding = 0) buffer VertexBuffer {
+    Vertex vertices[];
+};
+
+layout(std430, binding = 1) buffer ConstraintBuffer {
+    Constraint constraints[];
+};
+
+uniform float deltaTime;
+uniform vec3 gravity;
+uniform float damping;
+uniform int numConstraintIterations;
+uniform vec3 sphereCenter;
+uniform float sphereRadius;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= vertices.length()) return;
+
+    Vertex vertex = vertices[index];
+    if (vertex.invMass == 0.0) return; // Skip fixed points
+
+    // Verlet integration
+    vec3 velocity = (vertex.position.xyz - vertex.oldPosition.xyz) / deltaTime;
+    vec3 newPosition = vertex.position.xyz + velocity * damping * deltaTime + gravity * deltaTime * deltaTime;
+
+    // Store old position
+    vertex.oldPosition = vertex.position;
+    vertex.position.xyz = newPosition;
+
+    // Sphere collision
+    vec3 toSphere = vertex.position.xyz - sphereCenter;
+    float dist = length(toSphere);
+    if (dist < sphereRadius) {
+        vertex.position.xyz = sphereCenter + normalize(toSphere) * sphereRadius;
+    }
+
+    // Constraint solving
+    for (int iter = 0; iter < numConstraintIterations; iter++) {
+        for (int i = 0; i < constraints.length(); i++) {
+            Constraint constraint = constraints[i];
+            if (constraint.vertexA == index || constraint.vertexB == index) {
+                Vertex vertexA = vertices[constraint.vertexA];
+                Vertex vertexB = vertices[constraint.vertexB];
+
+                vec3 delta = vertexB.position.xyz - vertexA.position.xyz;
+                float deltaLength = length(delta);
+                float diff = (deltaLength - constraint.restLength) / deltaLength;
+
+                if (constraint.vertexA == index) {
+                    vertex.position.xyz += delta * 0.5 * diff * vertex.invMass;
+                } else {
+                    vertex.position.xyz -= delta * 0.5 * diff * vertex.invMass;
+                }
+            }
+        }
+    }
+
+    // Calculate normal
+    vertex.normal = vec4(0.0);
+    // Normal calculation would typically be done in a separate pass
+    // after positions are finalized
+
+    vertices[index] = vertex;
+}

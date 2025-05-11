@@ -1,0 +1,90 @@
+#version 430
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer VelocityField {
+    vec2 velocity[];
+};
+
+layout(std430, binding = 1) buffer PressureField {
+    float pressure[];
+};
+
+layout(std430, binding = 2) buffer DensityField {
+    float density[];
+};
+
+uniform ivec2 resolution;
+uniform float deltaTime;
+uniform float diffusion;
+uniform float viscosity;
+
+uint getIndex(ivec2 pos) {
+    return uint(pos.y * resolution.x + pos.x);
+}
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (pos.x >= resolution.x || pos.y >= resolution.y) return;
+
+    uint index = getIndex(pos);
+
+    // Get neighboring cells
+    ivec2 left = ivec2(max(pos.x - 1, 0), pos.y);
+    ivec2 right = ivec2(min(pos.x + 1, resolution.x - 1), pos.y);
+    ivec2 top = ivec2(pos.x, max(pos.y - 1, 0));
+    ivec2 bottom = ivec2(pos.x, min(pos.y + 1, resolution.y - 1));
+
+    // Velocity diffusion
+    vec2 velocityLaplacian =
+        velocity[getIndex(left)] +
+        velocity[getIndex(right)] +
+        velocity[getIndex(top)] +
+        velocity[getIndex(bottom)] -
+        4.0 * velocity[index];
+
+    velocity[index] += viscosity * deltaTime * velocityLaplacian;
+
+    // Density diffusion
+    float densityLaplacian =
+        density[getIndex(left)] +
+        density[getIndex(right)] +
+        density[getIndex(top)] +
+        density[getIndex(bottom)] -
+        4.0 * density[index];
+
+    density[index] += diffusion * deltaTime * densityLaplacian;
+
+    // Simple pressure solver
+    float divergence =
+        velocity[getIndex(right)].x - velocity[getIndex(left)].x +
+        velocity[getIndex(bottom)].y - velocity[getIndex(top)].y;
+
+    pressure[index] = divergence * -0.25;
+
+    // Apply pressure force to velocity
+    vec2 pressureGradient = vec2(
+        pressure[getIndex(right)] - pressure[getIndex(left)],
+        pressure[getIndex(bottom)] - pressure[getIndex(top)]
+    ) * 0.5;
+
+    velocity[index] -= pressureGradient;
+
+    // Advection
+    vec2 pos_back = vec2(pos) - deltaTime * velocity[index];
+    pos_back = clamp(pos_back, vec2(0.0), vec2(resolution) - 1.0);
+    ivec2 pos_i = ivec2(pos_back);
+
+    // Simple bilinear interpolation for advection
+    vec2 t = pos_back - vec2(pos_i);
+    uint i00 = getIndex(pos_i);
+    uint i10 = getIndex(ivec2(pos_i.x + 1, pos_i.y));
+    uint i01 = getIndex(ivec2(pos_i.x, pos_i.y + 1));
+    uint i11 = getIndex(ivec2(pos_i.x + 1, pos_i.y + 1));
+
+    density[index] = mix(
+        mix(density[i00], density[i10], t.x),
+        mix(density[i01], density[i11], t.x),
+        t.y
+    );
+}

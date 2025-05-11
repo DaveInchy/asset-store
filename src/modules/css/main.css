@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&display=swap');
+
+* {
+  font-family: 'Fira Code', monospace;
+}
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+  }
+}
+
+h1 {
+  font-size: 3.5rem;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+}
+
+a:hover {
+  pointer: pointer;
+}

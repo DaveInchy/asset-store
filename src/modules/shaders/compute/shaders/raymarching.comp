@@ -1,0 +1,260 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) buffer OutputBuffer {
+    vec4 pixels[];
+};
+
+layout(set = 0, binding = 1) uniform CameraBuffer {
+    vec4 cameraPos;
+    vec4 cameraDir;
+    vec4 cameraUp;
+};
+
+layout(set = 0, binding = 2) uniform ConfigBuffer {
+    float maxSteps;
+    float maxDistance;
+    float epsilon;
+    float aoStrength;
+    float aoStepSize;
+    float shadowSoftness;
+    float reflectionStrength;
+    float refractionIndex;
+};
+
+struct Material {
+    vec3 albedo;
+    float metallic;
+    float roughness;
+    float transparency;
+    float ior;
+};
+
+struct Light {
+    vec3 position;
+    vec3 color;
+    float intensity;
+};
+
+const int MAX_LIGHTS = 4;
+const Light lights[MAX_LIGHTS] = Light[](
+    Light(vec3(5.0, 5.0, -5.0), vec3(1.0, 0.9, 0.7), 2.0),  // Main light
+    Light(vec3(-5.0, 3.0, 5.0), vec3(0.3, 0.5, 1.0), 1.0),  // Blue fill light
+    Light(vec3(0.0, -5.0, 0.0), vec3(1.0, 0.2, 0.1), 0.5),  // Red ground bounce
+    Light(vec3(0.0, 10.0, 0.0), vec3(1.0, 1.0, 1.0), 0.2)   // Ambient top light
+);
+
+// Signed Distance Functions
+float sdSphere(vec3 p, float radius) {
+    return length(p) - radius;
+}
+
+float sdBox(vec3 p, vec3 size) {
+    vec3 d = abs(p) - size;
+    return min(max(d.x, max(d.y, d.z)), 0.0) + length(max(d, 0.0));
+}
+
+float sdTorus(vec3 p, vec2 t) {
+    vec2 q = vec2(length(p.xz) - t.x, p.y);
+    return length(q) - t.y;
+}
+
+// Scene Description with Materials
+struct Hit {
+    float dist;
+    Material mat;
+};
+
+Hit map(vec3 p) {
+    Material matGround = Material(vec3(0.3, 0.3, 0.35), 0.0, 0.9, 0.0, 1.5);
+    Material matSphere = Material(vec3(0.8, 0.2, 0.1), 0.9, 0.1, 0.0, 1.5);
+    Material matBox = Material(vec3(0.1, 0.8, 0.2), 0.0, 0.4, 0.8, 1.52);
+    Material matTorus = Material(vec3(0.2, 0.1, 0.8), 0.7, 0.3, 0.0, 1.5);
+
+    float sphere = sdSphere(p - vec3(0.0, 1.0, 0.0), 1.0);
+    float box = sdBox(p - vec3(2.0, 1.0, 0.0), vec3(0.5));
+    float torus = sdTorus(p - vec3(-2.0, 1.0, 0.0), vec2(1.0, 0.25));
+    float ground = p.y;
+
+    Hit hit;
+    hit.dist = sphere;
+    hit.mat = matSphere;
+
+    if (box < hit.dist) {
+        hit.dist = box;
+        hit.mat = matBox;
+    }
+    if (torus < hit.dist) {
+        hit.dist = torus;
+        hit.mat = matTorus;
+    }
+    if (ground < hit.dist) {
+        hit.dist = ground;
+        hit.mat = matGround;
+    }
+
+    return hit;
+}
+
+// Normal calculation
+vec3 calcNormal(vec3 p) {
+    const vec2 k = vec2(1.0, -1.0);
+    return normalize(
+        k.xyy * map(p + k.xyy * epsilon).dist +
+        k.yyx * map(p + k.yyx * epsilon).dist +
+        k.yxy * map(p + k.yxy * epsilon).dist +
+        k.xxx * map(p + k.xxx * epsilon).dist
+    );
+}
+
+// Ambient Occlusion
+float calcAO(vec3 p, vec3 n) {
+    float ao = 0.0;
+    float weight = 1.0;
+
+    for(float i = 1.0; i <= 5.0; i++) {
+        float dist = i * aoStepSize;
+        vec3 samplePoint = p + n * dist;
+        float d = map(samplePoint).dist;
+        ao += weight * (dist - d) / dist;
+        weight *= 0.5;
+    }
+
+    return 1.0 - ao * aoStrength;
+}
+
+// Soft Shadows
+float calcShadow(vec3 p, vec3 lightDir, float mint, float maxt) {
+    float res = 1.0;
+    float ph = 1e10;
+    float t = mint;
+
+    for(int i = 0; i < 32; i++) {
+        float h = map(p + lightDir * t).dist;
+        float y = h * h / (2.0 * ph);
+        float d = sqrt(h * h - y * y);
+        res = min(res, shadowSoftness * d / max(0.0, t - y));
+        ph = h;
+        t += h;
+
+        if(res < epsilon || t > maxt) break;
+    }
+
+    return clamp(res, 0.0, 1.0);
+}
+
+// Fresnel effect
+float fresnel(float cosTheta, float F0) {
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// Ray marching with material information
+struct RayHit {
+    float dist;
+    Material mat;
+    vec3 position;
+    vec3 normal;
+};
+
+RayHit rayMarch(vec3 ro, vec3 rd) {
+    RayHit hit;
+    hit.dist = -1.0;
+
+    float t = 0.0;
+    for(float i = 0.0; i < maxSteps; i++) {
+        vec3 p = ro + rd * t;
+        Hit h = map(p);
+
+        if(h.dist < epsilon) {
+            hit.dist = t;
+            hit.mat = h.mat;
+            hit.position = p;
+            hit.normal = calcNormal(p);
+            break;
+        }
+
+        if(t > maxDistance) break;
+        t += h.dist;
+    }
+
+    return hit;
+}
+
+// Lighting calculation with all effects
+vec3 lighting(RayHit hit, vec3 viewDir) {
+    if(hit.dist < 0.0) return vec3(0.0);
+
+    vec3 color = vec3(0.0);
+    float ao = calcAO(hit.position, hit.normal);
+
+    // Direct lighting from all light sources
+    for(int i = 0; i < MAX_LIGHTS; i++) {
+        vec3 lightDir = normalize(lights[i].position - hit.position);
+        float shadow = calcShadow(hit.position, lightDir, 0.1, length(lights[i].position - hit.position));
+
+        vec3 halfDir = normalize(lightDir + viewDir);
+        float NdotL = max(dot(hit.normal, lightDir), 0.0);
+        float NdotH = max(dot(hit.normal, halfDir), 0.0);
+        float NdotV = max(dot(hit.normal, viewDir), 0.0);
+
+        // Specular reflection
+        float F = fresnel(NdotV, mix(0.04, 0.9, hit.mat.metallic));
+        float D = pow(NdotH, 2.0 / hit.mat.roughness);
+        float G = NdotV * NdotL;
+        vec3 specular = F * D * G * lights[i].color * lights[i].intensity;
+
+        // Diffuse
+        vec3 diffuse = hit.mat.albedo * lights[i].color * NdotL * lights[i].intensity;
+
+        color += (diffuse + specular) * shadow;
+    }
+
+    // Apply ambient occlusion
+    color *= ao;
+
+    // Reflections
+    if(hit.mat.metallic > 0.0 || reflectionStrength > 0.0) {
+        vec3 reflDir = reflect(-viewDir, hit.normal);
+        RayHit reflHit = rayMarch(hit.position + hit.normal * epsilon * 2.0, reflDir);
+        if(reflHit.dist > 0.0) {
+            float reflStrength = mix(reflectionStrength, 1.0, hit.mat.metallic);
+            color = mix(color, lighting(reflHit, reflDir), reflStrength);
+        }
+    }
+
+    // Refractions
+    if(hit.mat.transparency > 0.0) {
+        float ior = hit.mat.ior;
+        vec3 refrDir = refract(-viewDir, hit.normal, 1.0 / ior);
+        if(length(refrDir) > 0.0) {
+            RayHit refrHit = rayMarch(hit.position - hit.normal * epsilon * 2.0, refrDir);
+            if(refrHit.dist > 0.0) {
+                color = mix(color, lighting(refrHit, refrDir), hit.mat.transparency);
+            }
+        }
+    }
+
+    return color;
+}
+
+void main() {
+    uvec2 pixel = gl_GlobalInvocationID.xy;
+    uvec2 dimensions = gl_NumWorkGroups.xy * gl_WorkGroupSize.xy;
+    vec2 uv = (vec2(pixel) - 0.5 * vec2(dimensions)) / float(dimensions.y);
+
+    // Camera setup
+    vec3 ro = vec3(cameraPos);
+    vec3 rd = normalize(vec3(cameraDir) + uv.x * cross(vec3(cameraDir), vec3(cameraUp)) + uv.y * vec3(cameraUp));
+
+    // Ray marching
+    RayHit hit = rayMarch(ro, rd);
+    vec3 color = lighting(hit, -rd);
+
+    // Tone mapping and gamma correction
+    color = color / (color + vec3(1.0));
+    color = pow(color, vec3(1.0 / 2.2));
+
+    uint index = pixel.y * dimensions.x + pixel.x;
+    pixels[index] = vec4(color, 1.0);
+}
