@@ -7,7 +7,7 @@ import Window3D from "./Window3D";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei/web";
 import { extend, useFrame } from "@react-three/fiber";
 import { MeshCollider, RapierCollider, RapierContext, RigidBody, RigidBodyAutoCollider, RigidBodyProps, RigidBodyTypeString, Vector3Tuple, useRapier } from "@react-three/rapier";
-import { useGameStore } from "mods@utils/states";
+import { useGameStore } from "mods@core/utils/states";
 
 export default function Environment({
     children,

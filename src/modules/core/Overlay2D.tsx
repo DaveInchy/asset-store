@@ -1,4 +1,4 @@
-import { useGameStore } from "mods@utils/states";
+import { useGameStore } from "mods@core/utils/states";
 import { useEffect, useState } from "react";
 
 export default function OverlayUI({

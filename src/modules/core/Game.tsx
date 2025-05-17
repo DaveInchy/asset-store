@@ -2,7 +2,7 @@ import "mods@css/main.css";
 import "mods@css/tw.css";
 import Camera from "mods@core/Camera";
 import Environment from "mods@core/Environment";
-import Icons from "mods@utils/jsx/VectorIcons";
+import Icons from "mods@core/utils/jsx/VectorIcons";
 import Image from "next/image";
 import Lighting from "mods@core/Lighting";
 import Scene from "mods@core/Scene";
@@ -19,7 +19,7 @@ import { ButtonRed } from "mods@components/interface/Buttons/ButtonRed";
 import { ButtonYellow } from "mods@components/interface/Buttons/ButtonYellow";
 import { RippleButton } from "mods@components/interface/RippleButton";
 import { metadata, roboto, roboto_mono } from "mods@core/config/globals";
-import { useGameStore } from "mods@utils/states";
+import { useGameStore } from "mods@core/utils/states";
 import { Roboto_Mono } from "next/font/google";
 import { MutableRefObject, Ref, Suspense, createRef, useEffect, useRef, useState } from "react";
 

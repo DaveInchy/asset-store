@@ -41,5 +41,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yourusername/advanced-webgl-template-project.git"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.60"
   }
 }

@@ -1,3 +1,4 @@
+import Overlay2D from "./Overlay2D";
 import Planet from "mods@components/Planet";
 import React from "react";
 import Sun from "mods@components/static/Sun";
@@ -16,6 +17,7 @@ export default function Environment({
 }): JSX.Element {
     return (
         <div className={"min-w-[100vw] min-h-[100vh] p-0 m-0 fixed overflow-hidden"}>
+
             <Window3D usePhysics={false}>
                 {/* Main Camera */}
                 <PerspectiveCamera makeDefault position={[0, 100, 200]} />

@@ -12,12 +12,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <title>ThreeJS Studio</title>
-        <link type="application/x-icon" href={"/ThreeJS.svg"} />
+        <title>Dave's Asset Store</title>
+        <link type="application/x-icon" href={"/doonline.svg"} />
       </head>
       <body>
         <div id="app" style={{...font.style, }} className={""}>
-          {children}
+          <div className={}>
+            {children}
+          </div>
         </div>
       </body>
     </html>
