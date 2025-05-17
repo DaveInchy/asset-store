@@ -1,4 +1,11 @@
+import type { GPU, GPUCanvasContext, GPURenderPassColorAttachment, GPURenderPassEncoder, GPUTextureFormat } from "@webgpu/types";
 import { BufferUsageFlags, ComputePipeline, GBuffer, GraphicsAdapter, RenderPipeline, ShaderModule, ShaderSources } from "./GraphicsAdapter";
+
+declare global {
+    interface Navigator {
+        gpu: GPU;
+    }
+}
 
 // e:/Website/asset-store/src/graphics/WebGPUAdapter.ts
 
@@ -131,15 +138,14 @@ export class WebGPUAdapter implements GraphicsAdapter {
         }
     }
 
-    createComputePipeline(shaderModule: GPUShaderModule, label?: string): ComputePipeline | null {
+    async createComputePipeline(shaderModule: GPUShaderModule, label?: string): Promise<ComputePipeline | null> {
         if (!this.device || !shaderModule) {
             console.error("WebGPUAdapter.createComputePipeline: Device or shaderModule not available.");
             return null;
         }
         try {
-            return this.device.createComputePipeline({
-                label: label || shaderModule.label || "ComputePipeline",
-                layout: 'auto', // Or a specific GPUPipelineLayout
+            return await this.device.createComputePipelineAsync({
+                layout: this.device.createPipelineLayout({ bindGroupLayouts: [] }),
                 compute: {
                     module: shaderModule,
                     entryPoint: 'computeMain', // Convention, make configurable
@@ -158,7 +164,7 @@ export class WebGPUAdapter implements GraphicsAdapter {
         }
 
         if (!this.currentCommandEncoder) {
-            this.currentCommandEncoder = this.device.createCommandEncoder({ label: "MainCommandEncoder" });
+            this.currentCommandEncoder = this.device.createCommandEncoder();
         }
 
         const colorAttachment: GPURenderPassColorAttachment = {
